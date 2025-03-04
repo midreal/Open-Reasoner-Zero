@@ -193,6 +193,7 @@ class CustomRewardTrainer(RayPPOTrainer):
         scores = []
         responses = []
         avg_non_stop_count = 0
+        thinking_tag_count = 0  # Counter for responses with thinking tags
         pass_at_n_dict = defaultdict(list)
         num_tokens: List[int] = []
 
@@ -236,9 +237,19 @@ class CustomRewardTrainer(RayPPOTrainer):
             response_token = len(out_token)
             output["repeat_score"] = rep_score
             output["reflection_pattern_score"] = reflection_pattern_score
-            # only correct and stoped response can aquire reward
+            # Check if response contains thinking process tags
+            has_thinking_tags =  "</think>" in outputs[idx]["response"]
+            print("output: ", outputs[idx]["response"])
+            print("has_thinking_tags: ", has_thinking_tags)
+            if has_thinking_tags:
+                thinking_tag_count += 1
+            
+            # Calculate base score based on correctness and stop reason
             if stop_reason == "stop":
                 score = 1.0 if iscorrect else 0.0
+                # Deduct points if thinking process is missing
+                if not has_thinking_tags:
+                    score = max(0.0, score - 0.5)  # Ensure score doesn't go below 0
             else:
                 avg_non_stop_count += 1
                 score = 0.0
@@ -291,6 +302,7 @@ class CustomRewardTrainer(RayPPOTrainer):
             "std_correct_num_tokens": 0 if len(correct_tokens_arr) == 0 else np.std(correct_tokens_arr).item(),
             "avg_incorrect_num_tokens": 0 if len(incorrect_tokens_arr) == 0 else np.mean(incorrect_tokens_arr).item(),
             "std_incorrect_num_tokens": 0 if len(incorrect_tokens_arr) == 0 else np.std(incorrect_tokens_arr).item(),
+            "thinking_tag_ratio": thinking_tag_count / len(prompts),  # Ratio of responses with thinking tags
         }
         for k, v in log_dict.items():
             self.writer.add_scalar(k, v, self.global_step)
